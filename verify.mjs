@@ -1,15 +1,17 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
-const nodes=new Map();const events={};const storage=new Map();
-const context=vm.createContext({console,setTimeout:()=>0,clearTimeout,window:{},localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},document:{querySelector:q=>{if(!nodes.has(q))nodes.set(q,{innerHTML:'',textContent:'',classList:{add(){},remove(){}},focus(){}});return nodes.get(q);},addEventListener:(name,fn)=>events[name]=fn},FormData:class{constructor(f){this.data=f.data}get(k){return this.data[k]}}});
+const nodes=new Map(),events={},storage=new Map();
+const context=vm.createContext({console,setTimeout:()=>0,clearTimeout,localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},document:{activeElement:null,documentElement:{style:{setProperty(){}}},querySelector:q=>{if(!nodes.has(q))nodes.set(q,{innerHTML:'',textContent:'',classList:{add(){},remove(){}},focus(){}});return nodes.get(q);},addEventListener:(k,fn)=>events[k]=fn},FormData:class{constructor(f){this.data=f.data;}get(k){return this.data[k];}}});
 vm.runInContext(fs.readFileSync(new URL('./app.js',import.meta.url),'utf8'),context);
 const run=s=>vm.runInContext(s,context);let count=0;
-for(let page=0;page<10;page++){const tabs=run(`modules[${page}].slice(2)`);for(const tab of tabs){run(`state.page=${page};state.tab=${JSON.stringify(tab)};shell()`);assert.ok(nodes.get('#app').innerHTML.includes('联境'));count++;}}
-run("state.page=4;state.tab='销售订单';state.query='星禾';state.brand='全部品牌';state.status='全部状态'");assert.equal(run('selectedOrders().length'),1);
-run("state.query='不存在';");assert.equal(run('selectedOrders().length'),0);
-run("state.query='';state.role='美仓作业视角';shell();detail('AS202610140001')");assert.ok(!nodes.get('#overlay').innerHTML.includes('18,640'));assert.ok(!nodes.get('#app').innerHTML.includes('data-page="7"'));
-events.submit({preventDefault(){},target:{id:'order-form',data:{customer:'验证客户',brand:'安速',product:'美西海运 FBA 专线',cargo:'家具 / 10 箱',origin:'深圳',destination:'洛杉矶',amount:'100'}}});assert.equal(run('orders.length'),7);assert.equal(JSON.parse(storage.get('lj-orders-v1'))[0][1],'验证客户');
-events.submit({preventDefault(){},target:{id:'resolve-form',dataset:{id:'AS202610130089'}}});assert.equal(run("orders.find(r=>r[0]==='AS202610130089')[6]"),'运输中');
-events.submit({preventDefault(){},target:{id:'task-form',dataset:{index:'1'},data:{comment:'已接单安排收货'}}});assert.equal(run('completedTasks.length'),1);assert.ok(run('tasks()').includes('已接单安排收货'));
-console.log(`PASS: ${count} page/tab renders; order search; role visibility; create/persist; exception resolution; task completion.`);
+for(const space of ['AS','TT','MC']){run(`switchSpace('${space}')`);for(const key of run('spaceModules[state.space]')){run(`changePage('${key}')`);for(const tab of run('definitions[state.page].tabs')){run(`state.tab=${JSON.stringify(tab)};render()`);assert.ok(nodes.get('#app').innerHTML.includes('V2.0'));count++;}}
+run("changePage('orders')");assert.ok(run('rows().every(r=>r.space===state.space)'));const foreign=space==='AS'?'TT':'AS';assert.equal(run(`findRecord('orders',db['${foreign}'].orders[0].id)`),null);}
+run("switchSpace('AS');changePage('orders');state.query='星禾'");assert.equal(run('rows().length'),2);
+const otherBefore=run('JSON.stringify(db.TT)'),mcBefore=run('JSON.stringify(db.MC)');
+events.submit({preventDefault(){},target:{id:'create-form',data:{title:'独立测试订单',customer:'星禾跨境（演示）',amount:'100'}}});assert.equal(run('db.AS.orders.length'),5);assert.equal(run('db.AS.orders[0].space'),'AS');assert.equal(JSON.parse(storage.get('lj-independent-v2')).AS.orders[0].title,'独立测试订单');assert.equal(run('JSON.stringify(db.TT)'),otherBefore);assert.equal(run('JSON.stringify(db.MC)'),mcBefore);
+const id=run('db.AS.orders[0].id');events.submit({preventDefault(){},target:{id:'advance-form',dataset:{key:'orders',id},data:{note:'测试提交当前环节'}}});assert.equal(run('db.AS.orders[0].stage'),1);assert.equal(run('db.AS.orders[0].logs.length'),1);
+run("switchSpace('TT')");assert.equal(run(`findRecord('orders','${id}')`),null);
+run("state.role='作业人员';changePage('orders');openRecord('orders',db.TT.orders[0].id)");assert.ok(nodes.get('#overlay').innerHTML.includes('权限隐藏'));assert.equal(run("allowed('finance')"),false);assert.equal(run("findRecord('finance',db.TT.finance[0].id)"),null);
+run("state.role='法人管理员';switchSpace('MC');changePage('special');state.tab='拦截'");assert.equal(run('rows().length'),1);assert.equal(run('rows()[0].scene'),'拦截');run("state.tab='退换货'");assert.equal(run('rows()[0].scene'),'退换货');
+console.log(`PASS: ${count} brand/module/tab renders; isolated customer pools; cross-space lookup rejection; create and persist; workflow logs; role restrictions; independent special workflows.`);
