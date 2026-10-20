@@ -1,1 +1,12 @@
-{"name":"unilogistics-platform","version":"2.0.0","private":true,"type":"module","scripts":{"start":"node server.mjs","dev":"node server.mjs","check":"node --check app.js"}}
+{
+  "name": "unilogistics-platform",
+  "version": "3.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node server.mjs",
+    "check": "node --check app.js",
+    "test": "node verify.mjs"
+  }
+}
